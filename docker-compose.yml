@@ -1,0 +1,82 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:13
+    container_name: PAI-postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql 
+    networks:
+      - mlops_network
+
+  minio:
+    image: minio/minio:latest
+    container_name: PAI-minio
+    restart: always
+    ports:
+      - "9000:9000"  # API Port
+      - "9001:9001"  # Console Port
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - mlops_network
+
+  create-buckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    container_name: PAI-mc
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add minio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD};
+      /usr/bin/mc mb minio/mlflow || true;
+      /usr/bin/mc mb minio/sales-data || true;
+      exit 0;
+      "
+    networks:
+      - mlops_network
+
+  mlflow:
+    image: python:3.9-slim
+    container_name: PAI-mlflow
+    restart: always
+    ports:
+      - "5000:5000"
+    command: >
+      bash -c "pip install mlflow boto3 psycopg2-binary &&
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      --default-artifact-root s3://mlflow/
+      --host 0.0.0.0"
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      - postgres
+      - create-buckets
+    networks:
+      - mlops_network
+
+volumes:
+  postgres_data:
+  minio_data:
+
+networks:
+  mlops_network:
+    driver: bridge

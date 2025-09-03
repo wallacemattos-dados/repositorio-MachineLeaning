@@ -1,0 +1,24 @@
+# Arquivos de ambiente
+.env
+
+# Cache e dados locais do DVC
+.dvc/cache
+.dvc/tmp
+.dvc/config.local
+
+# Dados não versionados pelo DVC
+data/raw/
+data/processed/
+data/features/
+
+# Diretórios do Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Artefatos de construção e logs
+build/
+dist/
+*.egg-info/
+*.log
